@@ -1,154 +1,130 @@
-<!--
-     This XLST script converts log4j.xml file to logback.xml file
-     trying to mimic its behavior as close as possible
+<log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
 
-     @author Roman Puchkovskiy
- -->
-<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-    exclude-result-prefixes="log4j xalan"
-    xmlns:log4j="http://jakarta.apache.org/log4j/"
-    xmlns:xalan="http://xml.apache.org/xslt"
-    xmlns:xslt="http://www.w3.org/1999/XSL/Transform">
+    <appender name="consola" class="org.apache.log4j.ConsoleAppender">
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[%d] - INT - %-5p [%t(%C{{1}}.%M)] %c{{1}} - %m%n"/>
+        </layout>
+    </appender>
 
-    <xsl:output indent="yes" xalan:indent-amount="4"/>
+    <appender name="fichero" class="org.apache.log4j.DailyRollingFileAppender">
+        <param name="Append" value="true"/>
+        <param name="File" value="../bin/log/Service.log"/>
+        <param name="DatePattern" value="'.'yyyy-MM-dd-hh"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[%d] - INT - %-5p [%t(%C{{1}}.%M)] %c{{1}} - %m%n"/>
+        </layout>
+    </appender>
 
-    <xsl:variable name="vLower" select="'abcdefghijklmnopqrstuvwxyz'"/>
+    <!--appender name="database" class="es.viesgo.sico.atenea.log.StorageAppender">
+        <param name="ContextName" value="storage"/>
+        <param name="Threshold" value="WARN"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[%d] %-5p [%t(%C{{1}}.%M)] %c{{1}} - %m%n"/>
+        </layout>
+    </appender-->
 
-    <xsl:variable name="vUpper" select="'ABCDEFGHIJKLMNOPQRSTUVWXYZ'"/>
+    <xsl:for-each select="configuration/deployList/deploy[@location=$deploy]/serviceList/service">
+        <xsl:call-template name="service.appender"/>
+    </xsl:for-each>
 
-    <xsl:template match="/log4j:configuration">
-        <configuration scan="true" scanPeriod="10 seconds">
-            <xsl:apply-templates select="appender"/>
-            <xsl:apply-templates select="logger"/>
-            <xsl:apply-templates select="root"/>
-            <xsl:apply-templates select="comment()"/>
-        </configuration>
-    </xsl:template>
+    <xsl:for-each select="configuration/deployList/deploy[@location=$deploy]/businessOp">
+        <xsl:apply-templates select="."/>
+    </xsl:for-each>
 
-    <xsl:template match="appender">
-        <appender>
-            <xsl:attribute name="name"><xsl:value-of select="@name"/></xsl:attribute>
-            <xsl:attribute name="class">
-                <xsl:choose>
-                    <xsl:when test="@class = 'org.apache.log4j.ConsoleAppender'">ch.qos.logback.core.ConsoleAppender</xsl:when>
-                    <xsl:when test="@class = 'org.apache.log4j.net.SMTPAppender'">ch.qos.logback.classic.net.SMTPAppender</xsl:when>
-                    <xsl:when test="@class = 'org.apache.log4j.net.SocketAppender'">ch.qos.logback.classic.net.SocketAppender</xsl:when>
-                    <xsl:when test="@class = 'org.apache.log4j.net.SyslogAppender'">ch.qos.logback.classic.net.SyslogAppender</xsl:when>
-                    <xsl:otherwise>
-                        <xsl:message terminate="yes">Unknown appender class: <xsl:value-of select="@class"/></xsl:message>
-                    </xsl:otherwise>
-                </xsl:choose>
-            </xsl:attribute>
-            <xsl:apply-templates select="param"/>
-            <xsl:apply-templates select="layout"/>
-            <xsl:apply-templates select="filter"/>
-        </appender>
-        <xsl:call-template name="newline"/>
-    </xsl:template>
+    <xsl:for-each select="configuration/deployList/deploy[@location=$deploy]/serviceList/service">
+        <xsl:call-template name="service.loggers"/>
+    </xsl:for-each>
 
-    <xsl:template match="param">
-        <xsl:choose>
-            <xsl:when test="@name = 'SMTPHost'">
-                <smtpHost><xsl:value-of select="@value"/></smtpHost>
-            </xsl:when>
-            <xsl:when test="@name = 'BufferSize'">
-                <!-- ignoring this parameter -->
-            </xsl:when>
-            <xsl:otherwise>
-                <!-- lowercasing the first character -->
-                <xsl:element name="{concat(translate(substring(@name,1,1), $vUpper, $vLower),
-                                      substring(@name, 2)
-                                     )
-                }">
-                    <xsl:value-of select="@value"/>
-                </xsl:element>
-            </xsl:otherwise>
-        </xsl:choose>
-    </xsl:template>
+    <!--category name="es.viesgo.sico">
+        <appender-ref ref="database"/>
+    </category-->
 
-    <xsl:template match="layout">
-        <xsl:choose>
-            <xsl:when test="@class = 'org.apache.log4j.PatternLayout'">
-                <xsl:choose>
-                    <xsl:when test="../@class = 'org.apache.log4j.ConsoleAppender'">
-                        <encoder>
-                            <pattern><xsl:value-of select="param[@name = 'ConversionPattern']/@value"/></pattern>
-                        </encoder>
-                    </xsl:when>
-                    <xsl:when test="../@class = 'org.apache.log4j.net.SocketAppender' or ../@class = 'org.apache.log4j.net.SyslogAppender'">
-                        <xsl:comment> this is NOT needed tor this logger, so it is commented out </xsl:comment>
-                        <xsl:comment><![CDATA[
-        <layout>
-            <pattern>]]><xsl:value-of select="param[@name = 'ConversionPattern']/@value"/><![CDATA[</pattern>
-        </layout>]]>
-                    </xsl:comment>
-                    </xsl:when>
-                    <xsl:otherwise>
-                        <layout>
-                            <pattern><xsl:value-of select="param[@name = 'ConversionPattern']/@value"/></pattern>
-                        </layout>
-                    </xsl:otherwise>
-                </xsl:choose>
-            </xsl:when>
-            <xsl:otherwise>
-                <xsl:message terminate="yes">Unknown layout class: <xsl:value-of select="@class"/></xsl:message>
-            </xsl:otherwise>
-        </xsl:choose>
-    </xsl:template>
+    <category name="es.viesgo.sico.atenea.storage">
+        <priority value="ERROR"/>
+    </category>
 
-    <xsl:template match="filter">
-        <xsl:choose>
-            <xsl:when test="@class = 'org.apache.log4j.varia.LevelRangeFilter' and param[@name = 'LevelMin']/@value != '' and param[@name = 'LevelMax']/@value = 'FATAL'">
-                <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-                    <level><xsl:value-of select="param[@name = 'LevelMin']/@value"/></level>
-                </filter>
-            </xsl:when>
-            <xsl:otherwise>
-                <xsl:message terminate="yes">Don't know what to do with filter</xsl:message>
-            </xsl:otherwise>
-        </xsl:choose>
-    </xsl:template>
+    <category name="es.viesgo.sico.atenea.util">
+        <priority value="ERROR"/>
+    </category>
 
-    <xsl:template match="logger">
-        <logger>
-            <xsl:attribute name="name"><xsl:value-of select="@name"/></xsl:attribute>
-            <xsl:attribute name="level">
-                <xsl:choose>
-                    <xsl:when test="level/@value = 'FATAL'">OFF</xsl:when>
-                    <xsl:otherwise><xsl:value-of select="level/@value"/></xsl:otherwise>
-                </xsl:choose>
-            </xsl:attribute>
-            <xsl:if test="@additivity != ''">
-                <xsl:attribute name="additivity"><xsl:value-of select="@additivity"/></xsl:attribute>
-            </xsl:if>
-            <xsl:apply-templates select="appender-ref"/>
-        </logger>
-    </xsl:template>
+    <category name="es.viesgo.sico.util.database">
+        <priority value="ERROR"/>
+    </category>
 
-    <xsl:template match="appender-ref">
-        <appender-ref>
-            <xsl:attribute name="ref"><xsl:value-of select="@ref"/></xsl:attribute>
-        </appender-ref>
-    </xsl:template>
+    <!--category name="java.sql">
+        <priority value="ERROR"/>
 
-    <xsl:template match="root">
-        <xsl:call-template name="newline"/>
-        <root>
-            <xsl:attribute name="level"><xsl:value-of select="level/@value"/></xsl:attribute>
-            <xsl:apply-templates select="appender-ref"/>
-            <xsl:apply-templates select="comment()"/>
-        </root>
-    </xsl:template>
+        <xsl:for-each select="configuration/deployList/deploy[@location=$deploy]/businessOp/id">
+            <xsl:apply-templates select="."/>
+        </xsl:for-each>
+    </category-->
 
-    <xsl:template match="comment()">
-        <xsl:copy-of select="."/>
-    </xsl:template>
+    <root>
+        <priority value="DEBUG" />
+        <appender-ref ref="consola"/>
+        <appender-ref ref="fichero"/>
 
-    <xsl:template name="newline">
-        <!-- don't reformat this! -->
-        <xsl:text>
+        <xsl:for-each select="configuration/deployList/deploy[@location=$deploy]/businessOp/id">
+            <xsl:apply-templates select="."/>
+        </xsl:for-each>
+    </root>
 
-</xsl:text>
-    </xsl:template>
+</log4j:configuration>
+</xsl:template>
+
+<xsl:template name="service.appender">
+    <appender name="{.}" class="org.apache.log4j.DailyRollingFileAppender">
+        <param name="Append" value="true"/>
+        <param name="File" value="../bin/log/{.}.log"/>
+        <param name="DatePattern" value="'.'yyyy-MM-dd-hh"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[%d] - INT - %-5p [%t(%C{{1}}.%M)] %c{{1}} - %m%n"/>
+        </layout>
+    </appender>
+</xsl:template>
+
+<xsl:template name="service.loggers">
+    <category name="es.viesgo.sico.atenea.opservices.{@logger}">
+        <priority value="ALL"/>
+        <appender-ref ref="{.}"/>
+    </category>
+
+    <category name="es.viesgo.sico.atenea.helpers.{@logger}Helper">
+        <priority value="ALL"/>
+        <appender-ref ref="{.}"/>
+    </category>
+
+    <category name="es.viesgo.sico.atenea.handlers.{@logger}Handler">
+        <priority value="ALL"/>
+        <appender-ref ref="{.}"/>
+    </category>
+</xsl:template>
+
+<xsl:template match="businessOp">
+    <appender name="{id}" class="org.apache.log4j.DailyRollingFileAppender">
+        <param name="Append" value="true"/>
+        <param name="File" value="../bin/log/{id}.log"/>
+        <param name="DatePattern" value="'.'yyyy-MM-dd"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[%d] - INT - %-5p [%t(%C{{1}}.%M)] %c{{1}} - %m%n"/>
+        </layout>
+        <filter class="org.apache.log4j.varia.StringMatchFilter">
+            <param name="StringToMatch" value="{id}"/>
+            <param name="AcceptOnMatch" value="true"/>
+        </filter>
+        <filter class="org.apache.log4j.varia.StringMatchFilter">
+            <param name="StringToMatch" value=" "/>
+            <param name="AcceptOnMatch" value="false"/>
+        </filter>
+        <filter class="org.apache.log4j.varia.StringMatchFilter">
+            <param name="StringToMatch" value="="/>
+            <param name="AcceptOnMatch" value="false"/>
+        </filter>
+    </appender>
+</xsl:template>
+
+<xsl:template match="id">
+    <appender-ref ref="{.}"/>
+</xsl:template>
 
 </xsl:stylesheet>
